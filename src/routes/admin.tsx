@@ -7,23 +7,23 @@ export const Route = createFileRoute("/admin")({
 });
 
 const COLORS = {
-  orange: "#FF6B1A",
-  orangeLight: "#FF8C42",
-  orangeDark: "#CC4F00",
-  dark: "#0A0A0A",
-  darker: "#050505",
-  card: "#111111",
-  cardHover: "#181818",
-  border: "#222222",
-  borderLight: "#2A2A2A",
-  text: "#F5F5F5",
-  textMuted: "#888888",
-  textFaint: "#444444",
+  orange: "#0096FF",        /* main   — #0096FF */
+  orangeLight: "#33AEFF",   /* light  — #33AEFF */
+  orangeDark: "#0077CC",    /* dark   — #0077CC */
+  dark: "#09090F",
+  darker: "#04040A",
+  card: "#0F1018",
+  cardHover: "#161824",
+  border: "#1E2235",
+  borderLight: "#252A40",
+  text: "#F0F4FF",
+  textMuted: "#7A87AA",
+  textFaint: "#374060",
   green: "#22C55E",
   red: "#EF4444",
-  blue: "#3B82F6",
+  blue: "#66C2FF",          /* lightest shade — #66C2FF */
   amber: "#F59E0B",
-  purple: "#8B5CF6",
+  purple: "#818CF8",
 };
 
 const MOCK_MEMBERS = [
