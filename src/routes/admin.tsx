@@ -22,7 +22,7 @@ const C = {
 type Lang = "en" | "ur";
 const TR = {
   en: {
-    dashboard:"Dashboard", attendance:"Attendance", members:"Members", trainers:"Trainers",
+    dashboard:"Dashboard", attendance:"Attendance", register:"Monthly Register", members:"Members", trainers:"Trainers",
     fees:"Fee Management", plans:"Plans", analytics:"Analytics", ceo:"About Gym",
     dailyAttendance:"Daily Attendance", morningBatch:"Morning Batch", eveningBatch:"Evening Batch",
     arrived:"Arrived", left:"Left", noRecords:"No records",
@@ -54,7 +54,7 @@ const TR = {
     monthlyFee:"Monthly Fee", dueDate:"Due Date", joinedOn:"Joined",
   },
   ur: {
-    dashboard:"ڈیش بورڈ", attendance:"حاضری", members:"ممبران", trainers:"ٹرینرز",
+    dashboard:"ڈیش بورڈ", attendance:"حاضری", register:"ماہانہ رجسٹر", members:"ممبران", trainers:"ٹرینرز",
     fees:"فیس مینجمنٹ", plans:"پلانز", analytics:"تجزیات", ceo:"جم کے بارے میں",
     dailyAttendance:"روزانہ حاضری", morningBatch:"صبح کا بیچ", eveningBatch:"شام کا بیچ",
     arrived:"آئے", left:"گئے", noRecords:"کوئی ریکارڈ نہیں",
@@ -449,14 +449,15 @@ function Sidebar({ page, setPage, collapsed, setCollapsed, t }: {
   page:string; setPage:(p:string)=>void; collapsed:boolean; setCollapsed:(c:boolean)=>void; t:(k:keyof typeof TR.en)=>string;
 }) {
   const nav = [
-    { id:"dashboard", icon:"⬡", tk:"dashboard" },
-    { id:"attendance", icon:"✓", tk:"attendance" },
-    { id:"members", icon:"◉", tk:"members" },
-    { id:"trainers", icon:"🏋", tk:"trainers" },
-    { id:"fees", icon:"₨", tk:"fees" },
-    { id:"plans", icon:"◈", tk:"plans" },
-    { id:"analytics", icon:"◫", tk:"analytics" },
-    { id:"ceo", icon:"🏛", tk:"ceo" },
+    { id:"dashboard",  icon:"⬡",  tk:"dashboard" },
+    { id:"attendance", icon:"✓",  tk:"attendance" },
+    { id:"register",   icon:"📋", tk:"register" },
+    { id:"members",    icon:"◉",  tk:"members" },
+    { id:"trainers",   icon:"🏋", tk:"trainers" },
+    { id:"fees",       icon:"₨",  tk:"fees" },
+    { id:"plans",      icon:"◈",  tk:"plans" },
+    { id:"analytics",  icon:"◫",  tk:"analytics" },
+    { id:"ceo",        icon:"🏛", tk:"ceo" },
   ] as const;
   return (
     <div style={{ width:collapsed?60:220, background:C.darker, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", transition:"width 0.25s cubic-bezier(.4,0,.2,1)", overflow:"hidden", flexShrink:0, height:"100vh", position:"sticky", top:0 }}>
@@ -931,6 +932,63 @@ function TrainersPage({ trainers, setTrainers, t }: {
   );
 }
 
+// ─── Shared attendance helpers ─────────────────────────────────────────────────
+const prand = (seed: number) => ((seed * 9301 + 49297) % 233280) / 233280;
+const strHash = (s: string) => s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+
+function genMemberDays(member: Member, selMonth: string) {
+  const [yr, mn] = selMonth.split("-").map(Number);
+  const total = new Date(yr, mn, 0).getDate();
+  const rows: { d:number; dateKey:string; dayName:string; isSunday:boolean; isFuture:boolean; status:string; checkIn:string; checkOut:string; duration:string }[] = [];
+  for (let d = 1; d <= total; d++) {
+    const dateKey = `${selMonth}-${String(d).padStart(2, "0")}`;
+    const dayDate = new Date(yr, mn - 1, d);
+    const dayName = dayDate.toLocaleDateString("en-US", { weekday: "short" });
+    const isSunday = dayDate.getDay() === 0;
+    const isFuture = dayDate > new Date();
+    const batch = member.batch;
+    let attRec: AttRecord | null = null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(`ip-att-${dateKey}`) ?? "{}") as Record<string, Record<string, AttRecord>>;
+      attRec = stored[member.id]?.[batch] ?? null;
+    } catch { /* no-op */ }
+    let status = "—", checkIn = "", checkOut = "", duration = "";
+    if (isFuture) {
+      status = "—";
+    } else if (isSunday) {
+      status = "Off";
+    } else if (attRec) {
+      status = attRec.arrived ? (attRec.left ? "Present" : "Checked In") : "Absent";
+      checkIn = attRec.arrivedTime ?? ""; checkOut = attRec.leftTime ?? "";
+    } else {
+      const seed = strHash(member.id + dateKey);
+      const present = prand(seed) > 0.18;
+      if (present) {
+        status = "Present";
+        if (batch === "Morning") {
+          const hh = 6, mm = Math.floor(prand(seed + 1) * 55);
+          const lhh = 8, lmm = Math.floor(prand(seed + 2) * 55);
+          checkIn = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")} AM`;
+          checkOut = `${String(lhh).padStart(2,"0")}:${String(lmm).padStart(2,"0")} AM`;
+          const tm = (lhh * 60 + lmm) - (hh * 60 + mm);
+          duration = `${Math.floor(tm / 60)}h ${tm % 60}m`;
+        } else {
+          const hh = 17, mm = Math.floor(prand(seed + 1) * 55);
+          const lhh = 18, lmm = Math.floor(prand(seed + 2) * 55);
+          checkIn = `${String(hh % 12 || 12).padStart(2,"0")}:${String(mm).padStart(2,"0")} PM`;
+          checkOut = `${String(lhh % 12 || 12).padStart(2,"0")}:${String(lmm).padStart(2,"0")} PM`;
+          const tm = (lhh * 60 + lmm) - (hh * 60 + mm);
+          duration = `${Math.floor(tm / 60)}h ${tm % 60}m`;
+        }
+      } else {
+        status = "Absent";
+      }
+    }
+    rows.push({ d, dateKey, dayName, isSunday, isFuture, status, checkIn, checkOut, duration });
+  }
+  return rows;
+}
+
 // ─── Monthly Report ────────────────────────────────────────────────────────────
 function MonthlyReport({ member, onClose, t }: {
   member: Member; onClose: () => void; t:(k:keyof typeof TR.en)=>string;
@@ -939,68 +997,7 @@ function MonthlyReport({ member, onClose, t }: {
   const photo = imgs[member.id];
   const [selMonth, setSelMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
-  // Deterministic pseudo-random seeded by member id + date for stable demo data
-  const prand = (seed: number) => ((seed * 9301 + 49297) % 233280) / 233280;
-  const strHash = (s: string) => s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-
-  const days = React.useMemo(() => {
-    const [yr, mn] = selMonth.split("-").map(Number);
-    const total = new Date(yr, mn, 0).getDate();
-    const rows = [];
-    for (let d = 1; d <= total; d++) {
-      const dateKey = `${selMonth}-${String(d).padStart(2, "0")}`;
-      const dayDate = new Date(yr, mn - 1, d);
-      const dayName = dayDate.toLocaleDateString("en-US", { weekday: "short" });
-      const isSunday = dayDate.getDay() === 0;
-      const isFuture = dayDate > new Date();
-      const batch = member.batch;
-
-      // Try localStorage real data first
-      let attRec: AttRecord | null = null;
-      try {
-        const stored = JSON.parse(localStorage.getItem(`ip-att-${dateKey}`) ?? "{}") as Record<string, Record<string, AttRecord>>;
-        attRec = stored[member.id]?.[batch] ?? null;
-      } catch { /* no-op */ }
-
-      let status = "—", checkIn = "", checkOut = "", duration = "";
-      if (isFuture) {
-        status = "—";
-      } else if (isSunday) {
-        status = "Off";
-      } else if (attRec) {
-        status = attRec.arrived ? (attRec.left ? "Present" : "Checked In") : "Absent";
-        checkIn = attRec.arrivedTime ?? "";
-        checkOut = attRec.leftTime ?? "";
-      } else {
-        // Generate deterministic demo data
-        const seed = strHash(member.id + dateKey);
-        const rand = prand(seed);
-        const present = rand > 0.18; // ~82% attendance
-        if (present) {
-          status = "Present";
-          if (batch === "Morning") {
-            const hh = 6, mm = Math.floor(prand(seed + 1) * 55);
-            const lhh = 8, lmm = Math.floor(prand(seed + 2) * 55);
-            checkIn = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")} AM`;
-            checkOut = `${String(lhh).padStart(2,"0")}:${String(lmm).padStart(2,"0")} AM`;
-            const totalMin = (lhh * 60 + lmm) - (hh * 60 + mm);
-            duration = `${Math.floor(totalMin/60)}h ${totalMin%60}m`;
-          } else {
-            const hh = 17 + Math.floor(prand(seed + 1) * 0.5), mm = Math.floor(prand(seed + 1) * 55);
-            const lhh = hh + 1 + Math.floor(prand(seed + 2) * 0.5), lmm = Math.floor(prand(seed + 2) * 55);
-            checkIn = `${String(hh % 12 || 12).padStart(2,"0")}:${String(mm).padStart(2,"0")} PM`;
-            checkOut = `${String(lhh % 12 || 12).padStart(2,"0")}:${String(lmm).padStart(2,"0")} PM`;
-            const totalMin = (lhh * 60 + lmm) - (hh * 60 + mm);
-            duration = `${Math.floor(totalMin/60)}h ${totalMin%60}m`;
-          }
-        } else {
-          status = "Absent";
-        }
-      }
-      rows.push({ d, dateKey, dayName, isSunday, isFuture, status, checkIn, checkOut, duration });
-    }
-    return rows;
-  }, [selMonth, member]);
+  const days = React.useMemo(() => genMemberDays(member, selMonth), [selMonth, member]);
 
   const presentDays = days.filter(r => r.status === "Present").length;
   const absentDays  = days.filter(r => r.status === "Absent").length;
@@ -1453,6 +1450,263 @@ function CeoPage({ t }: { t:(k:keyof typeof TR.en)=>string }) {
   );
 }
 
+// ─── Monthly Register (All Members) ──────────────────────────────────────────
+function MonthlyRegisterPage({ members, t }: { members: Member[]; t:(k:keyof typeof TR.en)=>string }) {
+  const { imgs } = useContext(ImagesCtx);
+  const [selMonth, setSelMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [viewMode, setViewMode] = useState<"matrix"|"detail">("matrix");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const [yr, mn] = selMonth.split("-").map(Number);
+  const daysInMonth = new Date(yr, mn, 0).getDate();
+  const dayNums = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const monthLabel = new Date(yr, mn - 1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+
+  const allData = React.useMemo(() =>
+    members.map(m => ({ member:m, days:genMemberDays(m, selMonth) })),
+    [selMonth, members]
+  );
+
+  const totalPresent = allData.reduce((s, { days }) => s + days.filter(d => d.status==="Present").length, 0);
+  const totalAbsent  = allData.reduce((s, { days }) => s + days.filter(d => d.status==="Absent").length, 0);
+  const avgRate = allData.length ? Math.round(allData.reduce((s, { days }) => {
+    const w = days.filter(d => !d.isSunday && !d.isFuture).length;
+    const p = days.filter(d => d.status==="Present").length;
+    return s + (w ? (p/w)*100 : 0);
+  }, 0) / allData.length) : 0;
+
+  const handlePrint = () => window.print();
+  const handleShare = () => {
+    const lines = allData.map(({ member, days }) => {
+      const p = days.filter(d => d.status==="Present").length;
+      const a = days.filter(d => d.status==="Absent").length;
+      const w = days.filter(d => !d.isSunday && !d.isFuture).length;
+      const pct = w ? Math.round((p/w)*100) : 0;
+      return `${member.name} (${member.id}): ✅${p} ❌${a} 📈${pct}% | ${feeStatus(member)}`;
+    });
+    const text = [`📊 *MONTHLY REGISTER — ${monthLabel.toUpperCase()}*`,`🏋 *${GYM.name}*, ${GYM.city}`,`━━━━━━━━━━━━━━━━━━━━━━━━`,...lines,`━━━━━━━━━━━━━━━━━━━━━━━━`,`📞 ${GYM.phone}  |  ${GYM.phone2}`].join("\n");
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
+
+  const cellColor = (s: string) =>
+    s==="Present" ? C.green : s==="Absent" ? C.red : s==="Off" ? C.textFaint+"55" : "transparent";
+
+  const thS: React.CSSProperties = { padding:"7px 5px", textAlign:"center", color:C.textMuted, fontWeight:600, fontSize:9, borderBottom:`1px solid ${C.border}`, whiteSpace:"nowrap" };
+  const tdS: React.CSSProperties = { padding:"6px 5px", textAlign:"center", borderBottom:`1px solid ${C.border}22`, fontSize:11 };
+
+  const toggleExpand = (id: string) => setExpanded(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  return (
+    <div>
+      <style>{`
+        @media print {
+          .no-print { display:none!important; }
+          .print-break { page-break-before: always; }
+          .rpt-table th, .rpt-table td { color:#000!important; border-color:#ccc!important; }
+          body { background:#fff!important; }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18, flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:20, fontWeight:800, color:C.text, margin:0 }}>Monthly Register</h1>
+          <p style={{ color:C.textMuted, margin:"4px 0 0", fontSize:11 }}>{monthLabel} · {members.length} members · {GYM.name}, {GYM.city}</p>
+        </div>
+        <div className="no-print" style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <input type="month" value={selMonth} onChange={e => setSelMonth(e.target.value)} style={{ ...inputStyle, width:"auto", padding:"10px 14px", minHeight:44 }} />
+          <button onClick={() => setViewMode(v => v==="matrix"?"detail":"matrix")} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 14px", color:C.textMuted, cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>
+            {viewMode==="matrix" ? "📋 Detail View" : "⊞ Matrix View"}
+          </button>
+          <button onClick={handleShare} style={{ background:"#25D36622", border:`1px solid #25D36655`, borderRadius:10, padding:"10px 14px", color:"#25D366", cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>📲 WhatsApp</button>
+          <button onClick={handlePrint} style={{ background:C.orange+"22", border:`1px solid ${C.orange}55`, borderRadius:10, padding:"10px 14px", color:C.orange, cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>🖨 Print</button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10, marginBottom:18 }}>
+        <Stat icon="◉" label="Members" value={members.length} color={C.blue} />
+        <Stat icon="✅" label="Total Present" value={totalPresent} color={C.green} />
+        <Stat icon="❌" label="Total Absent" value={totalAbsent} color={C.red} />
+        <Stat icon="📈" label="Avg Rate" value={`${avgRate}%`} color={C.orange} />
+        <Stat icon="₨" label="Revenue" value={`₨${(members.reduce((s,m)=>s+m.paidAmount,0)/1000).toFixed(0)}K`} color={C.amber} />
+        <Stat icon="⚠" label="Pending" value={`₨${(members.reduce((s,m)=>s+Math.max(0,m.fee-m.paidAmount),0)/1000).toFixed(0)}K`} color={C.red} />
+      </div>
+
+      {viewMode === "matrix" ? (
+        /* ── MATRIX VIEW ────────────────────────────────────────────────── */
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, overflow:"hidden" }}>
+          <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" as any }}>
+            <table className="rpt-table" style={{ borderCollapse:"collapse", width:"100%", fontSize:11 }}>
+              <thead>
+                <tr style={{ background:C.darker }}>
+                  <th style={{ ...thS, textAlign:"left", minWidth:170, position:"sticky", left:0, background:C.darker, zIndex:2, padding:"8px 12px" }}>Member</th>
+                  {dayNums.map(d => {
+                    const dt = new Date(yr, mn-1, d);
+                    const isSun = dt.getDay()===0;
+                    const isToday = dt.toISOString().slice(0,10) === new Date().toISOString().slice(0,10);
+                    return (
+                      <th key={d} style={{ ...thS, width:26, minWidth:26, color:isSun?C.textFaint:isToday?C.orange:C.textMuted, background:isToday?C.orange+"11":"transparent" }}>
+                        <div style={{ fontWeight:isToday?800:600 }}>{d}</div>
+                        <div style={{ fontSize:7, marginTop:1 }}>{dt.toLocaleDateString("en-US",{weekday:"narrow"})}</div>
+                      </th>
+                    );
+                  })}
+                  <th style={{ ...thS, minWidth:32, color:C.green }}>P</th>
+                  <th style={{ ...thS, minWidth:32, color:C.red }}>A</th>
+                  <th style={{ ...thS, minWidth:38, color:C.orange }}>Rate</th>
+                  <th style={{ ...thS, minWidth:60 }}>Fee</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allData.map(({ member, days }, ri) => {
+                  const present = days.filter(d => d.status==="Present").length;
+                  const absent  = days.filter(d => d.status==="Absent").length;
+                  const work    = days.filter(d => !d.isSunday && !d.isFuture).length;
+                  const pct     = work ? Math.round((present/work)*100) : 0;
+                  const photo   = imgs[member.id];
+                  return (
+                    <tr key={member.id} style={{ background:ri%2===0?"transparent":C.darker+"55" }}>
+                      <td style={{ ...tdS, textAlign:"left", position:"sticky", left:0, background:ri%2===0?C.card:C.darker, borderRight:`1px solid ${C.border}`, padding:"8px 12px", minWidth:170 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <Avatar name={member.name} size={28} id={member.id} />
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontWeight:700, color:C.text, fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:110 }}>{member.name}</div>
+                            <div style={{ fontSize:9, color:C.textMuted }}>{member.id} · {member.batch}</div>
+                          </div>
+                        </div>
+                      </td>
+                      {days.map(row => {
+                        const bg = cellColor(row.status);
+                        const tip = row.status==="Present" ? `✅ ${row.checkIn} → ${row.checkOut} (${row.duration})` : row.status;
+                        return (
+                          <td key={row.d} title={tip} style={{ ...tdS, padding:"4px 2px" }}>
+                            <div title={tip} style={{ width:18, height:18, borderRadius:3, background:bg, border:`1px solid ${bg==="transparent"?C.border+"22":bg+"66"}`, margin:"0 auto", transition:"transform 0.1s", cursor:"default" }} />
+                          </td>
+                        );
+                      })}
+                      <td style={{ ...tdS, color:C.green, fontWeight:800 }}>{present}</td>
+                      <td style={{ ...tdS, color:C.red, fontWeight:800 }}>{absent}</td>
+                      <td style={{ ...tdS, color:pct>=80?C.green:pct>=60?C.amber:C.red, fontWeight:800 }}>{pct}%</td>
+                      <td style={{ ...tdS }}><Badge status={feeStatus(member)} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Legend */}
+          <div style={{ padding:"10px 16px", background:C.darker, borderTop:`1px solid ${C.border}`, display:"flex", gap:14, flexWrap:"wrap", alignItems:"center" }}>
+            <span style={{ fontSize:10, color:C.textMuted, fontWeight:700 }}>Legend:</span>
+            {[[C.green,"Present"],[C.red,"Absent"],[C.textFaint+"55","Sunday/Off"],["transparent","Future/N/A"]].map(([bg,lbl]) => (
+              <div key={lbl as string} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:C.textMuted }}>
+                <div style={{ width:12, height:12, borderRadius:3, background:bg as string, border:`1px solid ${C.border}` }} /> {lbl}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* ── DETAIL VIEW ─────────────────────────────────────────────────── */
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {allData.map(({ member, days }, mi) => {
+            const present = days.filter(d => d.status==="Present").length;
+            const absent  = days.filter(d => d.status==="Absent").length;
+            const work    = days.filter(d => !d.isSunday && !d.isFuture).length;
+            const pct     = work ? Math.round((present/work)*100) : 0;
+            const due     = Math.max(0, member.fee - member.paidAmount);
+            const isExp   = expanded.has(member.id);
+            return (
+              <div key={member.id} className={mi>0?"print-break":""} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, overflow:"hidden" }}>
+                {/* Member header row — click to expand */}
+                <div onClick={() => toggleExpand(member.id)} style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 16px", cursor:"pointer", background:isExp?C.orange+"0A":"transparent", flexWrap:"wrap" }}>
+                  <Avatar name={member.name} size={44} id={member.id} />
+                  <div style={{ flex:1, minWidth:120 }}>
+                    <div style={{ fontSize:14, fontWeight:800, color:C.text }}>{member.name}</div>
+                    <div style={{ fontSize:10, color:C.textMuted }}>{member.id} · {member.phone} · {member.plan} · {member.batch}</div>
+                    <div style={{ display:"flex", gap:6, marginTop:5, flexWrap:"wrap" }}>
+                      <Badge status={member.status} />
+                      <Badge status={feeStatus(member)} />
+                      {member.medical.conditions.length>0 && <span style={{ fontSize:9, background:C.red+"15", color:C.red, padding:"2px 7px", borderRadius:5 }}>🩺 {member.medical.conditions.join(", ")}</span>}
+                    </div>
+                  </div>
+                  {/* Mini summary */}
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, flexShrink:0 }}>
+                    {[["✅",present,C.green],[`❌`,absent,C.red],[`${pct}%`,"Rate",C.orange],[`₨${(due/1000).toFixed(1)}K`,"Due",due>0?C.red:C.green]].map(([v,l,col],i) => (
+                      <div key={i} style={{ textAlign:"center", background:C.darker, borderRadius:8, padding:"8px 10px", minWidth:52 }}>
+                        <div style={{ fontSize:14, fontWeight:900, color:col as string }}>{v}</div>
+                        <div style={{ fontSize:9, color:C.textMuted }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize:16, color:C.textMuted, marginLeft:"auto", flexShrink:0 }}>{isExp?"▲":"▼"}</div>
+                </div>
+
+                {/* Expanded: full day table */}
+                {isExp && (
+                  <div>
+                    {/* Fee strip */}
+                    <div style={{ padding:"10px 16px", background:C.darker, borderTop:`1px solid ${C.border}`, display:"flex", gap:16, flexWrap:"wrap", fontSize:11 }}>
+                      <span style={{ color:C.textMuted }}>Plan: <b style={{ color:C.text }}>{member.plan}</b></span>
+                      <span style={{ color:C.textMuted }}>Monthly Fee: <b style={{ color:C.text }}>₨{member.fee.toLocaleString()}</b></span>
+                      <span style={{ color:C.textMuted }}>Paid: <b style={{ color:C.green }}>₨{member.paidAmount.toLocaleString()}</b></span>
+                      <span style={{ color:C.textMuted }}>Due: <b style={{ color:due>0?C.red:C.green }}>₨{due.toLocaleString()}</b></span>
+                      <span style={{ color:C.textMuted }}>Due Date: <b style={{ color:C.text }}>{member.dueDate}</b></span>
+                      <span style={{ color:C.textMuted }}>Blood Group: <b style={{ color:C.text }}>{member.medical.bloodGroup}</b></span>
+                    </div>
+                    {/* Day table */}
+                    <div style={{ overflowX:"auto" }}>
+                      <table className="rpt-table" style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                        <thead>
+                          <tr style={{ background:C.darker }}>
+                            {["#","Date","Day","Status","Check-In","Check-Out","Duration"].map(h => (
+                              <th key={h} style={{ padding:"9px 12px", textAlign:"left", color:C.textMuted, fontWeight:600, fontSize:10, borderBottom:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {days.map((row, i) => (
+                            <tr key={row.d} style={{ background:i%2===0?"transparent":C.darker+"55", borderBottom:`1px solid ${C.border}22` }}>
+                              <td style={{ padding:"8px 12px", color:C.textFaint, fontSize:10 }}>{row.d}</td>
+                              <td style={{ padding:"8px 12px", color:C.textMuted, whiteSpace:"nowrap" }}>{row.dateKey.slice(5)}</td>
+                              <td style={{ padding:"8px 12px", color:C.textMuted }}>{row.dayName}</td>
+                              <td style={{ padding:"8px 12px" }}>
+                                <span style={{ color:row.status==="Present"?C.green:row.status==="Absent"?C.red:C.textFaint, fontWeight:700, fontSize:11 }}>
+                                  {row.status==="Present"?"✅":row.status==="Absent"?"❌":row.status==="Off"?"🔵":"—"} {row.status}
+                                </span>
+                              </td>
+                              <td style={{ padding:"8px 12px", color:C.text, fontWeight:600, whiteSpace:"nowrap" }}>{row.checkIn||"—"}</td>
+                              <td style={{ padding:"8px 12px", color:C.text, fontWeight:600, whiteSpace:"nowrap" }}>{row.checkOut||"—"}</td>
+                              <td style={{ padding:"8px 12px", color:C.blue, fontWeight:600 }}>{row.duration||"—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Row summary */}
+                    <div style={{ padding:"10px 16px", background:C.darker, borderTop:`1px solid ${C.border}`, display:"flex", gap:16, flexWrap:"wrap", fontSize:11 }}>
+                      <span style={{ color:C.green }}>✅ Present: <b>{present}</b></span>
+                      <span style={{ color:C.red }}>❌ Absent: <b>{absent}</b></span>
+                      <span style={{ color:C.textMuted }}>🔵 Sundays: <b>{days.filter(d=>d.status==="Off").length}</b></span>
+                      <span style={{ color:C.orange }}>📈 Attendance Rate: <b>{pct}%</b></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ textAlign:"center", padding:"18px", color:C.textMuted, fontSize:10, marginTop:16 }}>
+        {GYM.name} · {GYM.address} · {GYM.phone} · Generated {new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+      </div>
+    </div>
+  );
+}
+
 // ─── Admin App ────────────────────────────────────────────────────────────────
 function AdminApp() {
   const [lang, setLang] = useState<Lang>("en");
@@ -1471,25 +1725,27 @@ function AdminApp() {
   const dateShort = now.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
 
   const NAV = [
-    { id:"dashboard", icon:"⬡", tk:"dashboard" },
-    { id:"attendance", icon:"✓", tk:"attendance" },
-    { id:"members", icon:"◉", tk:"members" },
-    { id:"trainers", icon:"🏋", tk:"trainers" },
-    { id:"fees", icon:"₨", tk:"fees" },
-    { id:"plans", icon:"◈", tk:"plans" },
-    { id:"analytics", icon:"◫", tk:"analytics" },
-    { id:"ceo", icon:"🏛", tk:"ceo" },
+    { id:"dashboard",  icon:"⬡",  tk:"dashboard" },
+    { id:"attendance", icon:"✓",  tk:"attendance" },
+    { id:"register",   icon:"📋", tk:"register" },
+    { id:"members",    icon:"◉",  tk:"members" },
+    { id:"trainers",   icon:"🏋", tk:"trainers" },
+    { id:"fees",       icon:"₨",  tk:"fees" },
+    { id:"plans",      icon:"◈",  tk:"plans" },
+    { id:"analytics",  icon:"◫",  tk:"analytics" },
+    { id:"ceo",        icon:"🏛", tk:"ceo" },
   ] as const;
 
   const pages: Record<string, React.ReactNode> = {
-    dashboard: <DashboardPage members={members} t={t} />,
+    dashboard:  <DashboardPage members={members} t={t} />,
     attendance: <AttendancePage members={members} t={t} />,
-    members: <MembersPage members={members} setMembers={setMembers} t={t} />,
-    trainers: <TrainersPage trainers={trainers} setTrainers={setTrainers} t={t} />,
-    fees: <FeesPage members={members} t={t} />,
-    plans: <PlansPage t={t} />,
-    analytics: <AnalyticsPage members={members} t={t} />,
-    ceo: <CeoPage t={t} />,
+    register:   <MonthlyRegisterPage members={members} t={t} />,
+    members:    <MembersPage members={members} setMembers={setMembers} t={t} />,
+    trainers:   <TrainersPage trainers={trainers} setTrainers={setTrainers} t={t} />,
+    fees:       <FeesPage members={members} t={t} />,
+    plans:      <PlansPage t={t} />,
+    analytics:  <AnalyticsPage members={members} t={t} />,
+    ceo:        <CeoPage t={t} />,
   };
 
   const dir = lang === "ur" ? "rtl" : "ltr";
