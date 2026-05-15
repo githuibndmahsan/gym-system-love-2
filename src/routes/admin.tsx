@@ -714,6 +714,7 @@ function MembersPage({ members, setMembers, t }: {
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editTarget, setEditTarget] = useState<Member | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [reportMember, setReportMember] = useState<Member | null>(null);
 
   const filtered = members.filter((m) =>
     !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.id.includes(search) || m.phone.includes(search)
@@ -737,6 +738,9 @@ function MembersPage({ members, setMembers, t }: {
 
   return (
     <div>
+      {reportMember && (
+        <MonthlyReport member={reportMember} onClose={() => setReportMember(null)} t={t} />
+      )}
       {formMode && (
         <MemberForm
           initial={editTarget ?? undefined}
@@ -824,6 +828,7 @@ function MembersPage({ members, setMembers, t }: {
 
                   {/* Actions */}
                   <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                    <button onClick={(e) => { e.stopPropagation(); setReportMember(m); }} style={{ flex:1, minWidth:100, background:C.blue+"18", border:`1px solid ${C.blue}44`, borderRadius:10, padding:"10px", color:C.blue, cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>📊 Report</button>
                     <button onClick={(e) => { e.stopPropagation(); setEditTarget(m); setFormMode("edit"); }} style={{ flex:1, minWidth:100, background:C.orange+"22", border:`1px solid ${C.orange}44`, borderRadius:10, padding:"10px", color:C.orange, cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>✏️ {t("edit")}</button>
                     <button onClick={(e) => { e.stopPropagation(); setDeleteId(m.id); }} style={{ flex:1, minWidth:100, background:C.red+"15", border:`1px solid ${C.red}33`, borderRadius:10, padding:"10px", color:C.red, cursor:"pointer", fontWeight:700, fontSize:12, minHeight:44 }}>🗑 {t("delete")}</button>
                   </div>
@@ -921,6 +926,284 @@ function TrainersPage({ trainers, setTrainers, t }: {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Monthly Report ────────────────────────────────────────────────────────────
+function MonthlyReport({ member, onClose, t }: {
+  member: Member; onClose: () => void; t:(k:keyof typeof TR.en)=>string;
+}) {
+  const { imgs } = useContext(ImagesCtx);
+  const photo = imgs[member.id];
+  const [selMonth, setSelMonth] = useState(() => new Date().toISOString().slice(0, 7));
+
+  // Deterministic pseudo-random seeded by member id + date for stable demo data
+  const prand = (seed: number) => ((seed * 9301 + 49297) % 233280) / 233280;
+  const strHash = (s: string) => s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+
+  const days = React.useMemo(() => {
+    const [yr, mn] = selMonth.split("-").map(Number);
+    const total = new Date(yr, mn, 0).getDate();
+    const rows = [];
+    for (let d = 1; d <= total; d++) {
+      const dateKey = `${selMonth}-${String(d).padStart(2, "0")}`;
+      const dayDate = new Date(yr, mn - 1, d);
+      const dayName = dayDate.toLocaleDateString("en-US", { weekday: "short" });
+      const isSunday = dayDate.getDay() === 0;
+      const isFuture = dayDate > new Date();
+      const batch = member.batch;
+
+      // Try localStorage real data first
+      let attRec: AttRecord | null = null;
+      try {
+        const stored = JSON.parse(localStorage.getItem(`ip-att-${dateKey}`) ?? "{}") as Record<string, Record<string, AttRecord>>;
+        attRec = stored[member.id]?.[batch] ?? null;
+      } catch { /* no-op */ }
+
+      let status = "—", checkIn = "", checkOut = "", duration = "";
+      if (isFuture) {
+        status = "—";
+      } else if (isSunday) {
+        status = "Off";
+      } else if (attRec) {
+        status = attRec.arrived ? (attRec.left ? "Present" : "Checked In") : "Absent";
+        checkIn = attRec.arrivedTime ?? "";
+        checkOut = attRec.leftTime ?? "";
+      } else {
+        // Generate deterministic demo data
+        const seed = strHash(member.id + dateKey);
+        const rand = prand(seed);
+        const present = rand > 0.18; // ~82% attendance
+        if (present) {
+          status = "Present";
+          if (batch === "Morning") {
+            const hh = 6, mm = Math.floor(prand(seed + 1) * 55);
+            const lhh = 8, lmm = Math.floor(prand(seed + 2) * 55);
+            checkIn = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")} AM`;
+            checkOut = `${String(lhh).padStart(2,"0")}:${String(lmm).padStart(2,"0")} AM`;
+            const totalMin = (lhh * 60 + lmm) - (hh * 60 + mm);
+            duration = `${Math.floor(totalMin/60)}h ${totalMin%60}m`;
+          } else {
+            const hh = 17 + Math.floor(prand(seed + 1) * 0.5), mm = Math.floor(prand(seed + 1) * 55);
+            const lhh = hh + 1 + Math.floor(prand(seed + 2) * 0.5), lmm = Math.floor(prand(seed + 2) * 55);
+            checkIn = `${String(hh % 12 || 12).padStart(2,"0")}:${String(mm).padStart(2,"0")} PM`;
+            checkOut = `${String(lhh % 12 || 12).padStart(2,"0")}:${String(lmm).padStart(2,"0")} PM`;
+            const totalMin = (lhh * 60 + lmm) - (hh * 60 + mm);
+            duration = `${Math.floor(totalMin/60)}h ${totalMin%60}m`;
+          }
+        } else {
+          status = "Absent";
+        }
+      }
+      rows.push({ d, dateKey, dayName, isSunday, isFuture, status, checkIn, checkOut, duration });
+    }
+    return rows;
+  }, [selMonth, member]);
+
+  const presentDays = days.filter(r => r.status === "Present").length;
+  const absentDays  = days.filter(r => r.status === "Absent").length;
+  const offDays     = days.filter(r => r.status === "Off").length;
+  const workDays    = days.filter(r => !r.isSunday && !r.isFuture).length;
+  const pct         = workDays ? Math.round((presentDays / workDays) * 100) : 0;
+  const due         = Math.max(0, member.fee - member.paidAmount);
+  const fs          = feeStatus(member);
+
+  const [yr, mn] = selMonth.split("-");
+  const monthLabel = new Date(Number(yr), Number(mn) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const handlePrint = () => window.print();
+  const handleShare = () => {
+    const text = [
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `📊 *MONTHLY REPORT — ${monthLabel.toUpperCase()}*`,
+      `🏋 *${GYM.name}* | ${GYM.city}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `👤 *${member.name}* (${member.id})`,
+      `📞 ${member.phone}`,
+      `🎯 Plan: ${member.plan} · Batch: ${member.batch}`,
+      `🩺 Blood Group: ${member.medical.bloodGroup}`,
+      ``,
+      `📅 *ATTENDANCE*`,
+      `✅ Present : ${presentDays} days`,
+      `❌ Absent  : ${absentDays} days`,
+      `🔴 Off Days: ${offDays} Sundays`,
+      `📈 Rate    : ${pct}%`,
+      ``,
+      `💰 *FEE DETAILS*`,
+      `Plan Fee : ₨${member.fee.toLocaleString()}/month`,
+      `Paid     : ₨${member.paidAmount.toLocaleString()}`,
+      `Balance  : ₨${due.toLocaleString()}`,
+      `Status   : ${fs}`,
+      `Due Date : ${member.dueDate}`,
+      ``,
+      `📞 ${GYM.phone} | ${GYM.phone2}`,
+      `📍 ${GYM.address}`,
+    ].join("\n");
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, "_blank");
+  };
+
+  const statusColor = (s: string) =>
+    s === "Present" ? C.green : s === "Absent" ? C.red : s === "Off" ? C.textFaint : s === "—" ? C.textFaint : C.amber;
+
+  return (
+    <div id="monthly-report-overlay" style={{ position:"fixed", inset:0, background:"rgba(0,3,12,0.97)", zIndex:5000, overflowY:"auto", WebkitOverflowScrolling:"touch" as any }}>
+      <style>{`
+        @media print {
+          #monthly-report-overlay { position: static !important; background: #fff !important; color: #000 !important; }
+          .no-print { display: none !important; }
+          .print-page { background: #fff !important; color: #000 !important; padding: 20px !important; }
+          .print-table th, .print-table td { color: #000 !important; border-color: #ccc !important; }
+          .print-card { background: #f9f9f9 !important; border-color: #ddd !important; }
+          body > *:not(#monthly-report-overlay) { display: none !important; }
+        }
+      `}</style>
+
+      <div className="print-page" style={{ maxWidth:780, margin:"0 auto", padding:"20px 16px", minHeight:"100vh" }}>
+        {/* Controls */}
+        <div className="no-print" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
+          <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 18px", color:C.textMuted, cursor:"pointer", fontWeight:700, fontSize:13, minHeight:44 }}>← Back</button>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <input type="month" value={selMonth} onChange={e => setSelMonth(e.target.value)} style={{ ...inputStyle, width:"auto", padding:"10px 14px", minHeight:44 }} />
+            <button onClick={handleShare} style={{ background:"#25D366"+"22", border:`1px solid #25D366`+"55", borderRadius:10, padding:"10px 16px", color:"#25D366", cursor:"pointer", fontWeight:700, fontSize:13, minHeight:44 }}>📲 WhatsApp</button>
+            <button onClick={handlePrint} style={{ background:C.orange+"22", border:`1px solid ${C.orange}55`, borderRadius:10, padding:"10px 16px", color:C.orange, cursor:"pointer", fontWeight:700, fontSize:13, minHeight:44 }}>🖨 Print</button>
+          </div>
+        </div>
+
+        {/* Report Header */}
+        <div className="print-card" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:18, padding:"20px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+            {photo
+              ? <img src={photo} alt="" style={{ width:68, height:68, borderRadius:"50%", objectFit:"cover", border:`2px solid ${C.orange}`, flexShrink:0 }} />
+              : <div style={{ width:68, height:68, borderRadius:"50%", background:C.orange+"22", border:`2px solid ${C.orange}55`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, flexShrink:0 }}>
+                  {member.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                </div>
+            }
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:20, fontWeight:900, color:C.text }}>{member.name}</div>
+              <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{member.id} · {member.phone}</div>
+              <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" }}>
+                <Badge status={member.plan} />
+                <Badge status={member.batch} />
+                <Badge status={member.status} />
+              </div>
+            </div>
+            <div style={{ textAlign:"right" as const, flexShrink:0 }}>
+              <div style={{ fontSize:12, fontWeight:900, color:C.orange }}>{GYM.name}</div>
+              <div style={{ fontSize:10, color:C.textMuted }}>{GYM.city}</div>
+              <div style={{ fontSize:10, color:C.textMuted, marginTop:2 }}>{monthLabel}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10, marginBottom:16 }}>
+          {[
+            { icon:"✅", label:"Present", val:presentDays, color:C.green },
+            { icon:"❌", label:"Absent",  val:absentDays,  color:C.red   },
+            { icon:"📅", label:"Working", val:workDays,    color:C.blue  },
+            { icon:"📈", label:"Rate",    val:`${pct}%`,   color:C.orange },
+          ].map(s => (
+            <div key={s.label} className="print-card" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"14px 12px", textAlign:"center" as const }}>
+              <div style={{ fontSize:22 }}>{s.icon}</div>
+              <div style={{ fontSize:22, fontWeight:900, color:s.color, marginTop:4 }}>{s.val}</div>
+              <div style={{ fontSize:10, color:C.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Fee Summary */}
+        <div className="print-card" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:"16px", marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:800, color:C.orange, marginBottom:12, letterSpacing:0.5 }}>💰 FEE DETAILS — {monthLabel}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10 }}>
+            {[
+              { label:"Monthly Fee",   val:`₨${member.fee.toLocaleString()}` },
+              { label:"Paid Amount",   val:`₨${member.paidAmount.toLocaleString()}`, color: member.paidAmount >= member.fee ? C.green : C.amber },
+              { label:"Balance Due",   val:`₨${due.toLocaleString()}`,               color: due > 0 ? C.red : C.green },
+              { label:"Fee Status",    val: fs,                                       color: fs==="Paid"?C.green:fs==="Overdue"?C.red:C.amber },
+              { label:"Due Date",      val: member.dueDate },
+              { label:"Last Payment",  val: member.lastPayment },
+              { label:"Joined On",     val: member.joinDate },
+              { label:"Plan",          val: member.plan },
+            ].map(f => (
+              <div key={f.label} style={{ background:C.darker, borderRadius:10, padding:"10px 12px" }}>
+                <div style={{ fontSize:9, color:C.textMuted, marginBottom:3 }}>{f.label}</div>
+                <div style={{ fontSize:13, fontWeight:700, color:(f as any).color ?? C.text }}>{f.val}</div>
+              </div>
+            ))}
+          </div>
+          {/* Fee bar */}
+          <div style={{ marginTop:12 }}>
+            <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${Math.min(100,(member.paidAmount/member.fee)*100)}%`, background: due===0?C.green:C.amber, borderRadius:3, transition:"width 0.5s" }} />
+            </div>
+            <div style={{ fontSize:10, color:C.textMuted, marginTop:4 }}>{Math.round((member.paidAmount/member.fee)*100)}% paid · ₨{member.paidAmount.toLocaleString()} of ₨{member.fee.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Medical Info */}
+        {(member.medical.conditions.length > 0 || member.medical.emergencyName) && (
+          <div className="print-card" style={{ background:C.red+"08", border:`1px solid ${C.red}22`, borderRadius:14, padding:"14px 16px", marginBottom:16 }}>
+            <div style={{ fontSize:11, fontWeight:800, color:C.red, marginBottom:8 }}>🩺 MEDICAL INFORMATION</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:8 }}>
+              <div><span style={{ color:C.textMuted, fontSize:10 }}>Blood Group: </span><span style={{ color:C.text, fontWeight:700 }}>{member.medical.bloodGroup}</span></div>
+              {member.medical.conditions.length > 0 && <div><span style={{ color:C.textMuted, fontSize:10 }}>Conditions: </span><span style={{ color:C.text, fontWeight:700 }}>{member.medical.conditions.join(", ")}</span></div>}
+              {member.medical.emergencyName && <div><span style={{ color:C.textMuted, fontSize:10 }}>Emergency Contact: </span><span style={{ color:C.text, fontWeight:700 }}>{member.medical.emergencyName} · {member.medical.emergencyPhone}</span></div>}
+              {member.medical.allergies && member.medical.allergies !== "None" && <div><span style={{ color:C.textMuted, fontSize:10 }}>Allergies: </span><span style={{ color:C.text, fontWeight:700 }}>{member.medical.allergies}</span></div>}
+            </div>
+          </div>
+        )}
+
+        {/* Day-wise Table */}
+        <div className="print-card" style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, overflow:"hidden", marginBottom:20 }}>
+          <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontSize:12, fontWeight:800, color:C.text }}>📅 DAY-WISE ATTENDANCE — {monthLabel}</div>
+            <div style={{ fontSize:10, color:C.textMuted }}>{member.batch} Batch · {member.batch === "Morning" ? GYM.timingMorning : GYM.timingEvening}</div>
+          </div>
+          <div style={{ overflowX:"auto" }}>
+            <table className="print-table" style={{ width:"100%", borderCollapse:"collapse" as const, fontSize:12 }}>
+              <thead>
+                <tr style={{ background:C.darker }}>
+                  {["#","Date","Day","Status","Check-In","Check-Out","Duration"].map(h => (
+                    <th key={h} style={{ padding:"10px 12px", textAlign:"left" as const, color:C.textMuted, fontWeight:600, fontSize:10, borderBottom:`1px solid ${C.border}`, whiteSpace:"nowrap" as const }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((row, i) => (
+                  <tr key={row.d} style={{ background: i%2===0 ? "transparent" : C.darker+"55", borderBottom:`1px solid ${C.border}22` }}>
+                    <td style={{ padding:"9px 12px", color:C.textFaint, fontSize:10 }}>{row.d}</td>
+                    <td style={{ padding:"9px 12px", color:C.textMuted, whiteSpace:"nowrap" as const }}>{row.dateKey.slice(5)}</td>
+                    <td style={{ padding:"9px 12px", color:C.textMuted }}>{row.dayName}</td>
+                    <td style={{ padding:"9px 12px" }}>
+                      <span style={{ color: statusColor(row.status), fontWeight:700, fontSize:11 }}>
+                        {row.status === "Present" ? "✅" : row.status === "Absent" ? "❌" : row.status === "Off" ? "🔵" : "—"} {row.status}
+                      </span>
+                    </td>
+                    <td style={{ padding:"9px 12px", color:C.text, fontWeight:600, whiteSpace:"nowrap" as const }}>{row.checkIn || "—"}</td>
+                    <td style={{ padding:"9px 12px", color:C.text, fontWeight:600, whiteSpace:"nowrap" as const }}>{row.checkOut || "—"}</td>
+                    <td style={{ padding:"9px 12px", color:C.blue, fontWeight:600 }}>{row.duration || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Table footer summary */}
+          <div style={{ padding:"10px 16px", background:C.darker, borderTop:`1px solid ${C.border}`, display:"flex", gap:20, flexWrap:"wrap" }}>
+            <span style={{ fontSize:11, color:C.green }}>✅ Present: <b>{presentDays}</b></span>
+            <span style={{ fontSize:11, color:C.red }}>❌ Absent: <b>{absentDays}</b></span>
+            <span style={{ fontSize:11, color:C.textMuted }}>🔵 Sundays: <b>{offDays}</b></span>
+            <span style={{ fontSize:11, color:C.orange }}>📈 Rate: <b>{pct}%</b></span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign:"center" as const, padding:"14px", borderTop:`1px solid ${C.border}`, color:C.textMuted, fontSize:10 }}>
+          {GYM.name} · {GYM.address} · {GYM.phone} · {GYM.phone2}<br/>
+          Generated on {new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}
+        </div>
       </div>
     </div>
   );
