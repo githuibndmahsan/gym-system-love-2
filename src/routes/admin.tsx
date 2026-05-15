@@ -10,12 +10,12 @@ const COLORS = {
   orange: "#0096FF",        /* main   — #0096FF */
   orangeLight: "#33AEFF",   /* light  — #33AEFF */
   orangeDark: "#0077CC",    /* dark   — #0077CC */
-  dark: "#09090F",
-  darker: "#04040A",
-  card: "#0F1018",
-  cardHover: "#161824",
-  border: "#1E2235",
-  borderLight: "#252A40",
+  dark: "#00060F",
+  darker: "#000308",
+  card: "#020D1E",
+  cardHover: "#051728",
+  border: "#0A2040",
+  borderLight: "#0D2A52",
   text: "#F0F4FF",
   textMuted: "#7A87AA",
   textFaint: "#374060",
