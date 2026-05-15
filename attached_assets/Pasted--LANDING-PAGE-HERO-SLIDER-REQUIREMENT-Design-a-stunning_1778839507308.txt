@@ -1,0 +1,121 @@
+# LANDING PAGE HERO SLIDER REQUIREMENT
+
+Design a stunning premium landing page hero section with a crystal-clear bright image slider inspired by luxury fitness brands and modern SaaS websites.
+
+The hero slider should feel:
+
+* Premium
+* Cinematic
+* Energetic
+* Bright
+* Crystal-clear
+* High-quality
+* Luxury fitness inspired
+
+Use:
+
+* Ultra HD gym photography
+* Bright crystal-clear visuals
+* High contrast premium lighting
+* Smooth animated transitions
+* Modern overlays
+* Elegant typography
+* Orange glowing accent highlights
+* Glassmorphism effects where suitable
+
+---
+
+# HERO SLIDER FEATURES
+
+The landing page should include:
+
+* Full-width fullscreen image slider
+* Auto sliding transitions
+* Manual next/previous controls
+* Touch/swipe support for mobile
+* Pagination indicators/dots
+* Smooth fade or cinematic transitions
+* Fast optimized image loading
+* Lazy loading for performance
+
+---
+
+# SLIDER CONTENT
+
+Each slide should include:
+
+* Professional gym background image/video
+* Motivational headline
+* Short premium tagline
+* CTA buttons
+
+Example:
+“Ignite Your Strength”
+“Train Like an Athlete”
+“Transform Your Body”
+
+Buttons:
+
+* Join Now
+* Start Free Trial
+* Explore Memberships
+
+---
+
+# VISUAL STYLE
+
+The slider must feel:
+
+* Bright and visually rich
+* Crystal sharp
+* Premium cinematic
+* Modern SaaS quality
+* Luxury gym branding
+
+Add:
+
+* Soft glowing effects
+* Animated gradients
+* Motion overlays
+* Blur/glass effects
+* Floating UI elements
+* Dynamic text animations
+
+---
+
+# MOBILE-FIRST REQUIREMENTS
+
+The hero slider must be fully optimized for:
+
+* Android
+* iPhone
+* Tablets
+* Desktop
+
+Requirements:
+
+* Responsive scaling
+* Touch swipe gestures
+* Fast loading
+* Optimized mobile images
+* Proper text readability on small screens
+
+---
+
+# PERFORMANCE REQUIREMENTS
+
+Optimize:
+
+* Image compression
+* Lazy loading
+* Smooth GPU animations
+* Fast first paint
+* Responsive image rendering
+
+Use modern animation libraries like:
+
+* Framer Motion
+* GSAP
+* Swiper.js
+
+The final landing page should feel like a world-class luxury fitness website with crystal-bright visuals and premium cinematic experience.

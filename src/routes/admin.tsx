@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useRef } from "react";
+import { CameraCapture } from "@/components/CameraCapture";
+import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({
   component: AdminApp,
@@ -25,6 +27,9 @@ const COLORS = {
   amber: "#F59E0B",
   purple: "#818CF8",
 };
+
+type MemberImagesCtxType = { images: Record<string, string>; set: (id: string, url: string) => void };
+const MemberImagesCtx = createContext<MemberImagesCtxType>({ images: {}, set: () => {} });
 
 const MOCK_MEMBERS = [
   { id: "GM001", name: "Ahmed Raza", phone: "+92 300 1234567", plan: "Elite", fee: 9000, status: "Active", batch: "Morning", image: null, dueDate: "2026-06-01", paidAmount: 9000, lastPayment: "2026-05-01", joinDate: "2024-01-15" },
@@ -68,10 +73,18 @@ const RECENT_PAYMENTS = [
   { member: "Hassan Sheikh", id: "GM005", amount: 2500, method: "Partial", date: "Yesterday 05:20 PM", status: "Partial" },
 ];
 
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+function Avatar({ name, size = 40, memberId }: { name: string; size?: number; memberId?: string }) {
+  const { images } = useContext(MemberImagesCtx);
+  const img = memberId ? images[memberId] : undefined;
   const initials = name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
-  const colors = ["#FF6B1A", "#8B5CF6", "#3B82F6", "#22C55E", "#F59E0B", "#EC4899"];
+  const colors = ["#0096FF", "#818CF8", "#66C2FF", "#22C55E", "#F59E0B", "#EC4899"];
   const colorIdx = name.charCodeAt(0) % colors.length;
+  if (img) return (
+    <img src={img} alt={name} style={{
+      width: size, height: size, borderRadius: "50%", objectFit: "cover",
+      flexShrink: 0, border: `2px solid ${COLORS.orange}44`, display: "block"
+    }} />
+  );
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%",
@@ -418,7 +431,7 @@ function AttendancePage() {
               borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center",
               gap: 12, flexWrap: "wrap" as const, transition: "border-color 0.2s"
             }}>
-              <Avatar name={member.name} size={44} />
+              <Avatar name={member.name} size={44} memberId={member.id} />
               <div style={{ flex: 1, minWidth: 140 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>{member.name}</div>
                 <div style={{ fontSize: 11, color: COLORS.textMuted }}>{member.id} · {member.phone}</div>
@@ -453,22 +466,153 @@ function AttendancePage() {
   );
 }
 
+const EMPTY_MEMBER = { name: "", phone: "", plan: "Starter", batch: "Morning", fee: 2500, status: "Active", joinDate: new Date().toISOString().slice(0, 10) };
+
 function MembersPage() {
+  const { images, set: setImage } = useContext(MemberImagesCtx);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<string | null>(null); // memberId or "new"
+  const [addOpen, setAddOpen] = useState(false);
+  const [newMember, setNewMember] = useState({ ...EMPTY_MEMBER });
+  const [newMemberPreview, setNewMemberPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = MOCK_MEMBERS.filter((m) =>
     !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.id.includes(search) || m.phone.includes(search)
   );
 
+  const openCamera = (targetId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCameraTarget(targetId);
+    setCameraOpen(true);
+  };
+
+  const handleCapture = (_blob: Blob, url: string) => {
+    if (!cameraTarget) return;
+    if (cameraTarget === "new") {
+      setNewMemberPreview(url);
+    } else {
+      setImage(cameraTarget, url);
+      toast.success("Profile photo updated");
+    }
+  };
+
+  const handleAddSubmit = () => {
+    if (!newMember.name.trim()) { toast.error("Name is required"); return; }
+    const id = `GM${String(MOCK_MEMBERS.length + 1).padStart(3, "0")}`;
+    MOCK_MEMBERS.push({
+      id, name: newMember.name, phone: newMember.phone,
+      plan: newMember.plan, fee: newMember.fee,
+      status: newMember.status, batch: newMember.batch,
+      image: null, dueDate: "", paidAmount: 0,
+      lastPayment: "", joinDate: newMember.joinDate,
+    });
+    if (newMemberPreview) setImage(id, newMemberPreview);
+    setAddOpen(false);
+    setNewMember({ ...EMPTY_MEMBER });
+    setNewMemberPreview(null);
+    toast.success(`Member ${newMember.name} added (${id})`);
+  };
+
   return (
     <div>
+      <CameraCapture
+        open={cameraOpen}
+        onOpenChange={setCameraOpen}
+        onCapture={handleCapture}
+        title={cameraTarget === "new" ? "Member Photo" : "Update Profile Photo"}
+      />
+
+      {/* Add Member Modal */}
+      {addOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,3,8,0.88)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setAddOpen(false)}>
+          <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 22, padding: 28, width: "100%", maxWidth: 440, maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: COLORS.text, marginBottom: 4 }}>Add New Member</div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 24 }}>Fill in member details and capture a profile photo</div>
+
+            {/* Photo capture area */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22 }}>
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                {newMemberPreview ? (
+                  <img src={newMemberPreview} alt="Preview" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: `2px solid ${COLORS.orange}` }} />
+                ) : (
+                  <div style={{ width: 72, height: 72, borderRadius: "50%", background: COLORS.darker, border: `2px dashed ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>📷</div>
+                )}
+                <button onClick={() => openCamera("new")} style={{
+                  position: "absolute", bottom: -2, right: -2, width: 24, height: 24,
+                  background: COLORS.orange, border: "none", borderRadius: "50%",
+                  color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center"
+                }}>+</button>
+              </div>
+              <div>
+                <button onClick={() => openCamera("new")} style={{
+                  background: COLORS.orange + "18", border: `1px solid ${COLORS.orange}44`,
+                  borderRadius: 8, padding: "8px 14px", color: COLORS.orange,
+                  cursor: "pointer", fontSize: 12, fontWeight: 600, marginBottom: 6, display: "block"
+                }}>📷 Open Camera</button>
+                <button onClick={() => fileInputRef.current?.click()} style={{
+                  background: "transparent", border: `1px solid ${COLORS.border}`,
+                  borderRadius: 8, padding: "8px 14px", color: COLORS.textMuted,
+                  cursor: "pointer", fontSize: 12
+                }}>⬆ Upload Photo</button>
+                <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" style={{ display: "none" }} onChange={(e) => {
+                  const f = e.target.files?.[0]; if (!f) return;
+                  const url = URL.createObjectURL(f); setNewMemberPreview(url);
+                }} />
+              </div>
+            </div>
+
+            {/* Form fields */}
+            {[
+              { label: "Full Name *", key: "name", placeholder: "e.g. Ahmed Raza", type: "text" },
+              { label: "Phone", key: "phone", placeholder: "+92 300 0000000", type: "text" },
+              { label: "Join Date", key: "joinDate", placeholder: "", type: "date" },
+            ].map((f) => (
+              <div key={f.key} style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 5 }}>{f.label}</label>
+                <input
+                  type={f.type}
+                  value={(newMember as any)[f.key]}
+                  onChange={(e) => setNewMember((p) => ({ ...p, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  style={{ width: "100%", background: COLORS.darker, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px", color: COLORS.text, fontSize: 13, boxSizing: "border-box" as const }}
+                />
+              </div>
+            ))}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 5 }}>Plan</label>
+                <select value={newMember.plan} onChange={(e) => { const p = PLANS.find((x) => x.name === e.target.value); setNewMember((prev) => ({ ...prev, plan: e.target.value, fee: p?.monthly ?? prev.fee })); }}
+                  style={{ width: "100%", background: COLORS.darker, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 12px", color: COLORS.text, fontSize: 13 }}>
+                  {PLANS.map((p) => <option key={p.name} value={p.name}>{p.name} — ₨{p.monthly.toLocaleString()}/mo</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: COLORS.textMuted, display: "block", marginBottom: 5 }}>Batch</label>
+                <select value={newMember.batch} onChange={(e) => setNewMember((p) => ({ ...p, batch: e.target.value }))}
+                  style={{ width: "100%", background: COLORS.darker, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 12px", color: COLORS.text, fontSize: 13 }}>
+                  <option>Morning</option><option>Evening</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button onClick={() => { setAddOpen(false); setNewMemberPreview(null); setNewMember({ ...EMPTY_MEMBER }); }}
+                style={{ flex: 1, background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 12, color: COLORS.textMuted, cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+              <button onClick={handleAddSubmit}
+                style={{ flex: 2, background: COLORS.orange, border: "none", borderRadius: 10, padding: 12, color: "#fff", cursor: "pointer", fontWeight: 700 }}>+ Add Member</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap" as const, gap: 10 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.text, margin: 0 }}>Members</h1>
           <p style={{ color: COLORS.textMuted, margin: "4px 0 0", fontSize: 12 }}>{MOCK_MEMBERS.length} registered members</p>
         </div>
-        <button style={{
+        <button onClick={() => setAddOpen(true)} style={{
           background: COLORS.orange, border: "none", borderRadius: 10, padding: "10px 20px",
           color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13
         }}>+ Add Member</button>
@@ -484,7 +628,17 @@ function MembersPage() {
             borderRadius: 14, padding: "14px 16px", cursor: "pointer", transition: "all 0.15s"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <Avatar name={m.name} size={46} />
+              {/* Avatar with camera overlay */}
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <Avatar name={m.name} size={46} memberId={m.id} />
+                <button onClick={(e) => openCamera(m.id, e)} title="Change photo" style={{
+                  position: "absolute", bottom: -2, right: -2, width: 20, height: 20,
+                  background: images[m.id] ? COLORS.orange : COLORS.border,
+                  border: "none", borderRadius: "50%", color: "#fff",
+                  cursor: "pointer", fontSize: 10, display: "flex",
+                  alignItems: "center", justifyContent: "center", lineHeight: 1
+                }}>📷</button>
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>{m.name}</div>
                 <div style={{ fontSize: 11, color: COLORS.textMuted }}>{m.id} · {m.phone}</div>
@@ -512,8 +666,10 @@ function MembersPage() {
                     <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>{f.value}</div>
                   </div>
                 ))}
-                <button style={{ background: COLORS.orange, border: "none", borderRadius: 8, padding: "10px 16px", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 12 }}>Collect Fee</button>
-                <button style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px", color: COLORS.text, cursor: "pointer", fontSize: 12 }}>Edit Profile</button>
+                <button onClick={(e) => { e.stopPropagation(); toast.info("Fee collection — go to Fee Management tab"); }}
+                  style={{ background: COLORS.orange, border: "none", borderRadius: 8, padding: "10px 16px", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 12 }}>Collect Fee</button>
+                <button onClick={(e) => openCamera(m.id, e)}
+                  style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px", color: COLORS.text, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>📷 Update Photo</button>
               </div>
             )}
           </div>
@@ -596,7 +752,7 @@ function FeesPage() {
           return (
             <div key={m.id} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
-                <Avatar name={m.name} size={42} />
+                <Avatar name={m.name} size={42} memberId={m.id} />
                 <div style={{ flex: 1, minWidth: 140 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>{m.name}</div>
                   <div style={{ fontSize: 11, color: COLORS.textMuted }}>{m.id} · {m.plan} Plan · Due: {m.dueDate}</div>
@@ -770,6 +926,8 @@ function AdminApp() {
   const [page, setPage] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [memberImages, setMemberImages] = useState<Record<string, string>>({});
+  const setImage = (id: string, url: string) => setMemberImages((p) => ({ ...p, [id]: url }));
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -794,7 +952,9 @@ function AdminApp() {
   ];
 
   return (
+    <MemberImagesCtx.Provider value={{ images: memberImages, set: setImage }}>
     <div style={{ display: "flex", background: COLORS.dark, minHeight: "100vh", fontFamily: "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: COLORS.text }}>
+      <Toaster position="top-right" richColors />
       <style>{`
         * { box-sizing: border-box; }
         input { outline: none; }
@@ -854,5 +1014,6 @@ function AdminApp() {
         </div>
       </div>
     </div>
+    </MemberImagesCtx.Provider>
   );
 }
