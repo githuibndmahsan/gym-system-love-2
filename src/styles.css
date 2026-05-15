@@ -10,8 +10,6 @@
  * Display: Barlow Condensed. Body: DM Sans. Mono: JetBrains Mono.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;0,900;1,900&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -226,7 +224,6 @@
     display: inline-flex; align-items: center; gap: 0.5rem;
   }
   .btn-ghost:hover { background: oklch(1 0 0 / 0.08); border-color: oklch(0.72 0.21 45 / 0.5); }
-  }
 }
 
 @layer utilities {
